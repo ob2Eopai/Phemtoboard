@@ -1,0 +1,24 @@
+html {
+	background: #eee;
+	color: #222;
+}
+
+div {
+	border: 1px solid #999;
+	padding: 0 1em;
+	background: #ddd;
+	margin: 1em;
+}
+
+img, video {
+	border: 1px dashed #999;
+}
+
+img {
+	max-width: 250px;
+	max-height: 250px;
+}
+
+pre {
+	white-space: pre-wrap;
+}
