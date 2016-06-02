@@ -1,11 +1,11 @@
 #!/usr/bin/python3
 
-# Database
+# Type detection
 
-import sqlite3
-from binascii import hexlify
-from os.path import join
-from subprocess import check_output
+from subprocess import Popen, PIPE
+import os
+
+default_type = "application/octet-stream"
 
 try:
 	import magic
@@ -15,7 +15,27 @@ try:
 
 	detect_type = type_detector.buffer
 except:
-	detect_type = lambda buffer: None
+	if os.name == "posix":
+		def detect_type(buffer):
+			try:
+				return Popen(
+					["file", "-b", "--mime-type", "-"],
+					stdin = PIPE,
+					stdout = PIPE,
+					stderr = PIPE
+				).communicate(buffer)[0].decode().strip()
+			except:
+				return default_type
+	else:
+		detect_type = lambda buffer: default_type
+
+
+
+# Database
+
+import sqlite3
+from binascii import hexlify
+from os.path import join
 
 class Container():
 	link = None
@@ -63,14 +83,6 @@ class Database():
 	def add_container(self, container):
 		if container.attachment is not None:
 			open(container.attachment_file_name, "wb").write(container.attachment)
-
-			if container.attachment_type is None:
-				try:
-					container.attachment_type = check_output([
-						"file", "-b", "--mime-type", container.attachment_file_name
-					]).strip().decode()
-				except:
-					container.attachment_type = "application/octet-stream"
 
 		self.connection.execute(queries["add-container"], (
 			container.link,
@@ -346,58 +358,155 @@ def build_thread(subject, thread):
 
 
 
-# Main
+# Refresh
 
 database = Database()
 
-pages = list(parse_config(open("pages.txt", "r").read()))
+def refresh():
+	pages = list(parse_config(open("pages.txt", "r").read()))
 
-print("Pages in configuration file: {}".format(len(pages)))
+	print("Pages in configuration file: {}".format(len(pages)))
 
-containers = {}
+	containers = {}
 
-for i in pages:
+	for i in pages:
+		try:
+			download_page(i)
+			containers.update(parse_page(i))
+		except Exception as exception:
+			print("Can't parse page {}: {}".format(repr(i.link), exception))
+			continue
+
+		print("Page scanned: {}".format(repr(i.link)))
+
+	print("Found containers: {}".format(len(containers)))
+
+	new_containers = []
+
+	for i in containers:
+		if not database.check_container(containers[i].link):
+			new_containers.append(containers[i])
+
+	print("New containers: {}".format(len(new_containers)))
+
+	target_threads = set()
+
+	for i in new_containers:
+		try:
+			extract_post(i)
+		except Exception as exception:
+			print(exception)
+
+			continue
+
+		database.add_container(i)
+
+		if i.subject is None:
+			print("Empty container: {}".format(repr(i.link)))
+		else:
+			print("Found a new post in: {}".format(repr(i.link)))
+
+			target_threads.add(i.subject)
+
+	target_threads |= set(database.get_subjects()) - set(list_threads())
+
+	for i in target_threads:
+		thread_file_name = build_thread(i, database.get_thread(i))
+
+		print("Built a thread: {}".format(thread_file_name))
+
+
+
+# Compose
+
+from tempfile import NamedTemporaryFile
+from os import walk
+from random import choice
+
+def compose(container_file_name, result_file_name, message_file_name, attachment_file_name):
+	if container_file_name is None:
+		possible_containers = []
+
+		for top, directories, files in walk("Containers", followlinks = True):
+			for i in files:
+				if splitext(i)[1] in [".jpg", ".jpeg", ".jpe", ".png", ".gif", ".webm"]:
+					possible_containers.append(join(top, i))
+
+		container_file_name = choice(possible_containers)
+
+		print("Container: {}".format(repr(container_file_name)))
+
+	container = open(container_file_name, "rb").read()
+	message = open(message_file_name, "r").read()
+
+	if split_message.match(message) is None:
+		print("Invalid message format")
+
+		exit(1)
+
 	try:
-		download_page(i)
-		containers.update(parse_page(i))
-	except Exception as exception:
-		print("Can't parse page {}: {}".format(repr(i.link), exception))
-		continue
+		message = message.encode()
+	except:
+		print("Wrong message encoding")
 
-	print("Page scanned: {}".format(repr(i.link)))
+		exit(1)
 
-print("Found containers: {}".format(len(containers)))
+	if len(message) >= 0x40000000:
+		print("Too long message")
 
-new_containers = []
+		exit(1)
 
-for i in containers:
-	if not database.check_container(containers[i].link):
-		new_containers.append(containers[i])
+	if attachment_file_name is not None:
+		attachment = open(attachment_file_name, "rb").read()
 
-print("New containers: {}".format(len(new_containers)))
+		if len(attachment) >= 0x40000000:
+			print("Too long attachment")
 
-target_threads = set()
-
-for i in new_containers:
-	try:
-		extract_post(i)
-	except Exception as exception:
-		print(exception)
-
-		continue
-
-	database.add_container(i)
-
-	if i.subject is None:
-		print("Empty container: {}".format(repr(i.link)))
+			exit(1)
 	else:
-		print("Found a new post in: {}".format(repr(i.link)))
+		attachment = None
 
-		target_threads.add(i.subject)
+	if result_file_name is None:
+		result_file = NamedTemporaryFile(
+			"wb",
+			suffix = splitext(container_file_name)[1],
+			dir = "Uploads",
+			prefix = "",
+			delete = False
+		)
 
-target_threads |= set(database.get_subjects()) - set(list_threads())
+		print("Result: {}".format(repr(result_file.name)))
+	else:
+		result_file = open(result_file_name, "wb")
 
-for i in target_threads:
-	thread_file_name = build_thread(i, database.get_thread(i))
+	result_file.write(container)
+	result_file.write(message)
 
-	print("Built a thread: {}".format(thread_file_name))
+	length = len(message)
+
+	if attachment is not None:
+		result_file.write(b"\xff")
+		result_file.write(attachment)
+
+		length += 1 + len(attachment)
+
+	result_file.write(length.to_bytes(4, "big"))
+	result_file.write(b"FEMTOBOARD-01")
+
+
+
+# Command line
+
+from sys import argv
+
+if len(argv) == 1:
+	refresh()
+else:
+	arguments_parser = ArgumentParser()
+	arguments_parser.add_argument("-c", "--container", action = "store")
+	arguments_parser.add_argument("-r", "--result", action = "store")
+	arguments_parser.add_argument("message", action = "store")
+	arguments_parser.add_argument("-a", "--attachment", action = "store")
+	parsed_arguments = arguments_parser.parse_args()
+
+	compose(parsed_arguments.container, parsed_arguments.result, parsed_arguments.message, parsed_arguments.attachment)
