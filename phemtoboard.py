@@ -65,12 +65,23 @@ class Container():
 
 		self.add_attachment_ID_and_type(sha256(attachment).digest(), detect_type(attachment))
 
+class ThreadEntry():
+	subject = None
+	last_timestamp = None
+	posts_count = None
+
+	def __init__(self, subject, last_timestamp, posts_count):
+		self.subject = subject
+		self.last_timestamp = last_timestamp
+		self.posts_count = posts_count
+
 queries = {
 	"initialize": open("resources/initialize.sql").read(),
 	"add-container": open("resources/add-container.sql").read(),
 	"check-container": open("resources/check-container.sql").read(),
 	"get-subjects": open("resources/get-subjects.sql").read(),
-	"get-thread": open("resources/get-thread.sql").read()
+	"get-thread": open("resources/get-thread.sql").read(),
+	"list-threads": open("resources/list-threads.sql").read()
 }
 
 class Database():
@@ -111,6 +122,10 @@ class Database():
 				container.add_attachment_ID_and_type(i["attachment_ID"], i["attachment_type"])
 
 			yield container
+
+	def list_threads(self):
+		for i in self.connection.execute(queries["list-threads"], ()):
+			yield ThreadEntry(i["subject"], i["last_timestamp"], i["posts_count"])
 
 
 
@@ -310,28 +325,31 @@ def extract_post(container):
 
 
 
-# Thread generation
+# Pages generation
 
 from string import Template
 from os import listdir
+from os.path import exists
 from html import escape
 from time import strftime, gmtime
 
 templates = {
 	"thread": Template(open("resources/thread.tpl").read()),
 	"post": Template(open("resources/post.tpl").read()),
-	"attachment": Template(open("resources/attachment.tpl").read())
+	"attachment": Template(open("resources/attachment.tpl").read()),
+	"index": Template(open("resources/index.tpl").read()),
+	"thread-entry": Template(open("resources/thread-entry.tpl").read())
 }
 
-def list_threads():
-	for i in listdir("Threads"):
+def list_built_threads():
+	for i in listdir("threads"):
 		parts = splitext(i)
 
 		if parts[1] == ".htm":
 			yield parts[0]
 
 def build_thread(subject, thread):
-	file_name = join("Threads", subject + ".htm")
+	file_name = join("threads", subject + ".htm")
 
 	file = open(file_name, "w")
 
@@ -341,8 +359,8 @@ def build_thread(subject, thread):
 
 	for i in thread:
 		file.write(templates["post"].substitute(
-			time = escape(strftime("%Y-%m-%dT%H:%M:%SZ", gmtime(i.timestamp))),
-			readable_time = escape(strftime("%Y-%m-%d, %H:%M:%S", gmtime(i.timestamp))),
+			timestamp = escape(strftime("%Y-%m-%dT%H:%M:%SZ", gmtime(i.timestamp))),
+			readable_timestamp = escape(strftime("%Y-%m-%d, %H:%M:%S", gmtime(i.timestamp))),
 			link = escape(i.link),
 			origin = escape(i.origin),
 			message = escape(i.message)
@@ -353,6 +371,27 @@ def build_thread(subject, thread):
 				path = escape(join("..", i.attachment_file_name)),
 				type = escape(i.attachment_type)
 			))
+
+	return file_name
+
+def check_built_index():
+	return exists("index.htm")
+
+def build_index(thread_entries):
+	file_name = "index.htm"
+
+	file = open(file_name, "w")
+
+	file.write(templates["index"].substitute())
+
+	for i in thread_entries:
+		file.write(templates["thread-entry"].substitute(
+			link = escape(join("threads", i.subject + ".htm")),
+			subject = escape(i.subject),
+			last_timestamp = escape(strftime("%Y-%m-%dT%H:%M:%SZ", gmtime(i.last_timestamp))),
+			readable_last_timestamp = escape(strftime("%Y-%m-%d, %H:%M:%S", gmtime(i.last_timestamp))),
+			posts_count = i.posts_count
+		))
 
 	return file_name
 
@@ -408,12 +447,13 @@ def refresh():
 
 			target_threads.add(i.subject)
 
-	target_threads |= set(database.get_subjects()) - set(list_threads())
+	target_threads |= set(database.get_subjects()) - set(list_built_threads())
 
 	for i in target_threads:
-		thread_file_name = build_thread(i, database.get_thread(i))
+		print("Built a thread: {}".format(build_thread(i, database.get_thread(i))))
 
-		print("Built a thread: {}".format(thread_file_name))
+	if len(target_threads) != 0 or not check_built_index():
+		print("Built index: {}".format(build_index(database.list_threads())))
 
 
 
@@ -503,8 +543,8 @@ if len(argv) == 1:
 	refresh()
 else:
 	arguments_parser = ArgumentParser()
-	arguments_parser.add_argument("-c", "--container", action = "store")
 	arguments_parser.add_argument("-r", "--result", action = "store")
+	arguments_parser.add_argument("-c", "--container", action = "store")
 	arguments_parser.add_argument("message", action = "store")
 	arguments_parser.add_argument("-a", "--attachment", action = "store")
 	parsed_arguments = arguments_parser.parse_args()

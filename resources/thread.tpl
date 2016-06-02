@@ -9,4 +9,6 @@
 
 <script src = "../resources/main.js"></script>
 
-<h1>$subject</h1>
+<h1><a href = "../index.htm">Phemtoboard</a></h1>
+
+<h2>$subject</h2>

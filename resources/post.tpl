@@ -1,6 +1,6 @@
 
 <hr />
 
-<p><time datetime = "$time">$readable_time</time> <a href = "$link">Container</a> <a href = "$origin">Origin</a></p>
+<p><time datetime = "$timestamp">$readable_timestamp</time> <a href = "$link">Container</a> <a href = "$origin">Origin</a></p>
 
 <pre>$message</pre>
