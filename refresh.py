@@ -7,6 +7,16 @@ from binascii import hexlify
 from os.path import join
 from subprocess import check_output
 
+try:
+	import magic
+
+	type_detector = magic.open(magic.MAGIC_MIME_TYPE)
+	type_detector.load()
+
+	detect_type = type_detector.buffer
+except:
+	detect_type = lambda buffer: None
+
 class Container():
 	link = None
 	origin = None
@@ -33,7 +43,7 @@ class Container():
 	def add_attachment(self, attachment):
 		self.attachment = attachment
 
-		self.add_attachment_ID_and_type(sha256(attachment).digest(), "application/octet-stream")
+		self.add_attachment_ID_and_type(sha256(attachment).digest(), detect_type(attachment))
 
 queries = {
 	"initialize": open("resources/initialize.sql").read(),
@@ -54,12 +64,13 @@ class Database():
 		if container.attachment is not None:
 			open(container.attachment_file_name, "wb").write(container.attachment)
 
-			try:
-				container.attachment_type = check_output([
-					"file", "-b", "--mime-type", container.attachment_file_name
-				]).strip().decode()
-			except:
-				pass
+			if container.attachment_type is None:
+				try:
+					container.attachment_type = check_output([
+						"file", "-b", "--mime-type", container.attachment_file_name
+					]).strip().decode()
+				except:
+					container.attachment_type = "application/octet-stream"
 
 		self.connection.execute(queries["add-container"], (
 			container.link,
