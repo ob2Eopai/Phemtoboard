@@ -5,6 +5,7 @@
 import sqlite3
 from binascii import hexlify
 from os.path import join
+from imghdr import what
 
 class Container():
 	link = None
@@ -14,6 +15,7 @@ class Container():
 	message = None
 	attachment = None
 	attachment_ID = None
+	attachment_type = None
 	attachment_file_name = None
 
 	def __init__(self, link, origin, timestamp, subject = None, message = None):
@@ -23,14 +25,27 @@ class Container():
 		self.subject = subject
 		self.message = message
 
-	def add_attachment_ID(self, attachment_ID):
+	def add_attachment_ID_and_type(self, attachment_ID, attachment_type):
 		self.attachment_ID = attachment_ID
-		self.attachment_file_name = join("attachments", hexlify(attachment_ID).decode() + ".bin")
+		self.attachment_type = attachment_type
+
+		self.attachment_file_name = join("attachments", hexlify(attachment_ID).decode() + "." + {
+			"image/jpeg": "jpg",
+			"image/png": "png",
+			"image/gif": "gif"
+		}.get(attachment_type, "bin"))
 
 	def add_attachment(self, attachment):
 		self.attachment = attachment
 
-		self.add_attachment_ID(sha256(attachment).digest())
+		attachment_type = what(None, h = attachment)
+
+		if attachment_type in ["jpeg", "png", "gif"]:
+			attachment_type = "image/" + attachment_type
+		else:
+			attachment_type = "application/octet-stream"
+
+		self.add_attachment_ID_and_type(sha256(attachment).digest(), attachment_type)
 
 class ThreadEntry():
 	subject = None
@@ -68,7 +83,8 @@ class Database():
 			container.timestamp,
 			container.subject,
 			container.message,
-			container.attachment_ID
+			container.attachment_ID,
+			container.attachment_type
 		))
 
 		self.connection.commit()
@@ -85,7 +101,7 @@ class Database():
 			container = Container(i["link"], i["origin"], i["timestamp"], i["subject"], i["message"])
 
 			if i["attachment_ID"] is not None:
-				container.add_attachment_ID(i["attachment_ID"])
+				container.add_attachment_ID_and_type(i["attachment_ID"], i["attachment_type"])
 
 			yield container
 
@@ -298,7 +314,6 @@ from os import listdir
 from os.path import exists
 from html import escape
 from time import strftime, gmtime
-from imghdr import what
 
 templates = {
 	"thread": Template(open("resources/thread.tpl", encoding = "UTF-8").read()),
@@ -327,21 +342,15 @@ def build_thread(subject, thread):
 	))
 
 	for i in thread:
-		content = ""
+		content = templates["message"].substitute(message = escape(i.message))
 
 		if i.attachment_ID is not None:
-			attachment_type = what(i.attachment_file_name)
 			attachment_path = join("..", i.attachment_file_name)
 
-			if attachment_type in ["jpeg", "png", "gif"]:
-				content += templates["image"].substitute(path = escape(attachment_path))
+			if i.attachment_type in ["image/jpeg", "image/png", "image/gif"]:
+				content = templates["image"].substitute(path = escape(attachment_path)) + content
 			else:
-				attachment_type = None
-
-		content += templates["message"].substitute(message = escape(i.message))
-
-		if i.attachment_ID is not None and attachment_type is None:
-			content += templates["attachment"].substitute(path = escape(attachment_path))
+				content += templates["attachment"].substitute(path = escape(attachment_path))
 
 		file.write(templates["post"].substitute(
 			timestamp = escape(strftime("%Y-%m-%dT%H:%M:%SZ", gmtime(i.timestamp))),
