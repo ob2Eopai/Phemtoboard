@@ -1,36 +1,5 @@
 #!/usr/bin/python3
 
-# Type detection
-
-from subprocess import Popen, PIPE
-import os
-
-default_type = "application/octet-stream"
-
-try:
-	import magic
-
-	type_detector = magic.open(magic.MAGIC_MIME_TYPE)
-	type_detector.load()
-
-	detect_type = type_detector.buffer
-except:
-	if os.name == "posix":
-		def detect_type(buffer):
-			try:
-				return Popen(
-					["file", "-b", "--mime-type", "-"],
-					stdin = PIPE,
-					stdout = PIPE,
-					stderr = PIPE
-				).communicate(buffer)[0].decode().strip()
-			except:
-				return default_type
-	else:
-		detect_type = lambda buffer: default_type
-
-
-
 # Database
 
 import sqlite3
@@ -45,7 +14,6 @@ class Container():
 	message = None
 	attachment = None
 	attachment_ID = None
-	attachment_type = None
 	attachment_file_name = None
 
 	def __init__(self, link, origin, timestamp, subject = None, message = None):
@@ -55,15 +23,14 @@ class Container():
 		self.subject = subject
 		self.message = message
 
-	def add_attachment_ID_and_type(self, attachment_ID, attachment_type):
+	def add_attachment_ID(self, attachment_ID):
 		self.attachment_ID = attachment_ID
-		self.attachment_type = attachment_type
 		self.attachment_file_name = join("attachments", hexlify(attachment_ID).decode() + ".bin")
 
 	def add_attachment(self, attachment):
 		self.attachment = attachment
 
-		self.add_attachment_ID_and_type(sha256(attachment).digest(), detect_type(attachment))
+		self.add_attachment_ID(sha256(attachment).digest())
 
 class ThreadEntry():
 	subject = None
@@ -76,12 +43,12 @@ class ThreadEntry():
 		self.posts_count = posts_count
 
 queries = {
-	"initialize": open("resources/initialize.sql").read(),
-	"add-container": open("resources/add-container.sql").read(),
-	"check-container": open("resources/check-container.sql").read(),
-	"get-subjects": open("resources/get-subjects.sql").read(),
-	"get-thread": open("resources/get-thread.sql").read(),
-	"list-threads": open("resources/list-threads.sql").read()
+	"initialize": open("resources/initialize.sql", encoding = "UTF-8").read(),
+	"add-container": open("resources/add-container.sql", encoding = "UTF-8").read(),
+	"check-container": open("resources/check-container.sql", encoding = "UTF-8").read(),
+	"get-subjects": open("resources/get-subjects.sql", encoding = "UTF-8").read(),
+	"get-thread": open("resources/get-thread.sql", encoding = "UTF-8").read(),
+	"list-threads": open("resources/list-threads.sql", encoding = "UTF-8").read()
 }
 
 class Database():
@@ -101,8 +68,7 @@ class Database():
 			container.timestamp,
 			container.subject,
 			container.message,
-			container.attachment_ID,
-			container.attachment_type
+			container.attachment_ID
 		))
 
 		self.connection.commit()
@@ -119,7 +85,7 @@ class Database():
 			container = Container(i["link"], i["origin"], i["timestamp"], i["subject"], i["message"])
 
 			if i["attachment_ID"] is not None:
-				container.add_attachment_ID_and_type(i["attachment_ID"], i["attachment_type"])
+				container.add_attachment_ID(i["attachment_ID"])
 
 			yield container
 
@@ -236,7 +202,7 @@ def parse_page(page):
 					link_parts.hostname == i.hostname and
 					link_parts.port == i.port and
 					commonpath([link_parts_path, i_path]) == i_path and
-					splitext(link_parts_path)[1] in [".jpg", ".jpeg", ".jpe", ".png", ".gif", ".webm"] and
+					splitext(link_parts_path)[1] in [".jpg", ".jpeg", ".jpe", ".jfif", ".png", ".gif", ".webm"] and
 					len(link_file_name) > 0 and
 					link_file_name[0].isdigit() or link_file_name[0] == "."
 				):
@@ -332,13 +298,16 @@ from os import listdir
 from os.path import exists
 from html import escape
 from time import strftime, gmtime
+from imghdr import what
 
 templates = {
-	"thread": Template(open("resources/thread.tpl").read()),
-	"post": Template(open("resources/post.tpl").read()),
-	"attachment": Template(open("resources/attachment.tpl").read()),
-	"index": Template(open("resources/index.tpl").read()),
-	"thread-entry": Template(open("resources/thread-entry.tpl").read())
+	"thread": Template(open("resources/thread.tpl", encoding = "UTF-8").read()),
+	"post": Template(open("resources/post.tpl", encoding = "UTF-8").read()),
+	"image": Template(open("resources/image.tpl", encoding = "UTF-8").read()),
+	"message": Template(open("resources/message.tpl", encoding = "UTF-8").read()),
+	"attachment": Template(open("resources/attachment.tpl", encoding = "UTF-8").read()),
+	"index": Template(open("resources/index.tpl", encoding = "UTF-8").read()),
+	"thread-entry": Template(open("resources/thread-entry.tpl", encoding = "UTF-8").read())
 }
 
 def list_built_threads():
@@ -351,26 +320,36 @@ def list_built_threads():
 def build_thread(subject, thread):
 	file_name = join("threads", subject + ".htm")
 
-	file = open(file_name, "w")
+	file = open(file_name, "w", encoding = "UTF-8")
 
 	file.write(templates["thread"].substitute(
 		subject = escape(subject)
 	))
 
 	for i in thread:
+		content = ""
+
+		if i.attachment_ID is not None:
+			attachment_type = what(i.attachment_file_name)
+			attachment_path = join("..", i.attachment_file_name)
+
+			if attachment_type in ["jpeg", "png", "gif"]:
+				content += templates["image"].substitute(path = escape(attachment_path))
+			else:
+				attachment_type = None
+
+		content += templates["message"].substitute(message = escape(i.message))
+
+		if i.attachment_ID is not None and attachment_type is None:
+			content += templates["attachment"].substitute(path = escape(attachment_path))
+
 		file.write(templates["post"].substitute(
 			timestamp = escape(strftime("%Y-%m-%dT%H:%M:%SZ", gmtime(i.timestamp))),
 			readable_timestamp = escape(strftime("%Y-%m-%d, %H:%M:%S", gmtime(i.timestamp))),
 			link = escape(i.link),
 			origin = escape(i.origin),
-			message = escape(i.message)
+			content = content
 		))
-
-		if i.attachment_ID is not None:
-			file.write(templates["attachment"].substitute(
-				path = escape(join("..", i.attachment_file_name)),
-				type = escape(i.attachment_type)
-			))
 
 	return file_name
 
@@ -380,7 +359,7 @@ def check_built_index():
 def build_index(thread_entries):
 	file_name = "index.htm"
 
-	file = open(file_name, "w")
+	file = open(file_name, "w", encoding = "UTF-8")
 
 	file.write(templates["index"].substitute())
 
@@ -402,7 +381,7 @@ def build_index(thread_entries):
 database = Database()
 
 def refresh():
-	pages = list(parse_config(open("pages.txt", "r").read()))
+	pages = list(parse_config(open("pages.txt", "r", encoding = "UTF-8").read()))
 
 	print("Pages in configuration file: {}".format(len(pages)))
 
@@ -462,6 +441,7 @@ def refresh():
 from tempfile import NamedTemporaryFile
 from os import walk
 from random import choice
+from sys import exit
 
 def compose(container_file_name, result_file_name, message_file_name, attachment_file_name):
 	if container_file_name is None:
@@ -469,7 +449,7 @@ def compose(container_file_name, result_file_name, message_file_name, attachment
 
 		for top, directories, files in walk("Containers", followlinks = True):
 			for i in files:
-				if splitext(i)[1] in [".jpg", ".jpeg", ".jpe", ".png", ".gif", ".webm"]:
+				if splitext(i)[1] in [".jpg", ".jpeg", ".jpe", ".jfif", ".png", ".gif", ".webm"]:
 					possible_containers.append(join(top, i))
 
 		container_file_name = choice(possible_containers)
@@ -477,7 +457,7 @@ def compose(container_file_name, result_file_name, message_file_name, attachment
 		print("Container: {}".format(repr(container_file_name)))
 
 	container = open(container_file_name, "rb").read()
-	message = open(message_file_name, "r").read()
+	message = open(message_file_name, "r", encoding = "UTF-8").read()
 
 	if split_message.match(message) is None:
 		print("Invalid message format")

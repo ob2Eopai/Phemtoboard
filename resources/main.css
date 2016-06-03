@@ -3,6 +3,10 @@ html {
 	color: #222;
 }
 
+hr {
+	display: none;
+}
+
 div {
 	border: 1px solid #999;
 	padding: 0 1em;
