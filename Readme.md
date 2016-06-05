@@ -21,7 +21,7 @@ Run `./phemtoboard.py` or `phemtoboard.exe` to search for new posts. It will cre
 
 ### Compose
 
-To create a femtocontainer use the Javascript generator included in the index and thread pages.
+To create a femtopost use the Javascript generator included in the index and thread pages.
 
 Alternatively, you can call `./phemtoboard.py` or `phemtoboard.exe` with the following console line arguments:
 
