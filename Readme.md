@@ -31,7 +31,7 @@ Alternatively, you can call `./phemtoboard.py` or `phemtoboard.exe` with the fol
 
 You can omit the first option, and the resulting file will be placed in the current directory under a random name.
 
-Consult the Femtoboard [specification](https://github.com/femtoboard/femtoboard/blob/master/README.md) for information about the input formats.
+Consult with the Femtoboard [specification](https://github.com/femtoboard/femtoboard/blob/master/README.md) for information about the input formats.
 
 ### Search a new thread
 
