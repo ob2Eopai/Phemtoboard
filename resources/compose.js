@@ -109,14 +109,14 @@ var encodedMarker = encodeString("FEMTOBOARD-01");
 
 var generate = function (input) {
 	return new Promise(function (resolve, reject) {
-		if (/^[a-zA-Z0-9,_-]{1,100}$/.test(input.subject) !== true) {
+		if (input.subject.length > 128 || input.subject.indexOf("\n") !== -1) {
 			reject(Error("Invalid thread subject"));
 		}
 
 		var encodedSubject = encodeString(input.subject);
 		var encodedMessage = encodeString(input.message === "" ? "" : input.message + "\n");
 
-		if (encodedMessage.length >= 0x40000000) {
+		if (encodedMessage.length > 0x40000000) {
 			reject(new Error("Too long message"));
 		}
 

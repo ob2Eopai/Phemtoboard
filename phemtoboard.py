@@ -240,8 +240,6 @@ def parse_page(page):
 from urllib.request import Request
 from hashlib import sha256
 
-verify_subject = re.compile("\A[a-zA-Z0-9,_-]{1,100}\Z", re.M)
-
 def extract_post(container):
 	request = Request(container.link)
 	request.add_header("Range", "bytes=-17")
@@ -260,7 +258,7 @@ def extract_post(container):
 
 		expected_length = int.from_bytes(signature[: 4], "big")
 
-		assert expected_length < 0x80000062
+		assert expected_length <= 0x80000082
 	except:
 		return
 
@@ -282,19 +280,19 @@ def extract_post(container):
 		parts = content.split(b"\n", 1)
 		subject = parts[0].decode()
 
-		assert verify_subject.match(subject) is not None
+		assert len(subject) <= 128
 
 		parts = parts[1].split(b"\xff", 1)
 		message = parts[0].decode()
 
-		assert len(message) < 0x40000000
+		assert len(message) <= 0x40000000
 
 		attachment = None
 
 		if len(parts) == 2:
 			attachment = parts[1]
 
-			assert len(attachment) < 0x40000000
+			assert len(attachment) <= 0x40000000
 	except:
 		return
 
@@ -310,6 +308,7 @@ def extract_post(container):
 
 from string import Template
 from os import listdir
+from base64 import urlsafe_b64encode
 from os.path import exists
 from html import escape
 from time import strftime, gmtime
@@ -324,17 +323,16 @@ templates = {
 	"thread-entry": Template(open("resources/thread-entry.tpl", encoding = "UTF-8").read())
 }
 
+def get_thread_file_name(subject):
+	return join("threads", urlsafe_b64encode(subject.encode()).decode() + ".htm")
+
 def list_built_threads():
 	for i in listdir("threads"):
-		parts = splitext(i)
-
-		if parts[1] == ".htm":
-			yield parts[0]
+		if splitext(i)[1] == ".htm":
+			yield join("threads", i)
 
 def build_thread(subject, thread):
-	file_name = join("threads", subject + ".htm")
-
-	file = open(file_name, "w", encoding = "UTF-8")
+	file = open(get_thread_file_name(subject), "w", encoding = "UTF-8")
 
 	file.write(templates["thread"].substitute(
 		subject = escape(subject)
@@ -359,28 +357,22 @@ def build_thread(subject, thread):
 			content = content
 		))
 
-	return file_name
-
 def check_built_index():
 	return exists("index.htm")
 
 def build_index(thread_entries):
-	file_name = "index.htm"
-
-	file = open(file_name, "w", encoding = "UTF-8")
+	file = open("index.htm", "w", encoding = "UTF-8")
 
 	file.write(templates["index"].substitute())
 
 	for i in thread_entries:
 		file.write(templates["thread-entry"].substitute(
-			link = escape(join("threads", i.subject + ".htm")),
+			link = escape(get_thread_file_name(i.subject)),
 			subject = escape(i.subject),
 			last_timestamp = escape(strftime("%Y-%m-%dT%H:%M:%SZ", gmtime(i.last_timestamp))),
 			readable_last_timestamp = escape(strftime("%Y-%m-%d, %H:%M:%S", gmtime(i.last_timestamp))),
 			posts_count = i.posts_count
 		))
-
-	return file_name
 
 
 
@@ -415,7 +407,7 @@ def refresh():
 
 	print("New containers: {}".format(len(new_containers)))
 
-	target_threads = set()
+	target_threads_subjects = set()
 
 	for i in new_containers:
 		try:
@@ -432,15 +424,23 @@ def refresh():
 		else:
 			print("Found a new post in: {}".format(repr(i.link)))
 
-			target_threads.add(i.subject)
+			target_threads_subjects.add(i.subject)
 
-	target_threads |= set(database.get_subjects()) - set(list_built_threads())
+	built_threads = set(list_built_threads())
 
-	for i in target_threads:
-		print("Built a thread: {}".format(build_thread(i, database.get_thread(i))))
+	for i in database.get_subjects():
+		if get_thread_file_name(i) not in built_threads:
+			target_threads_subjects.add(i)
 
-	if len(target_threads) != 0 or not check_built_index():
-		print("Built index: {}".format(build_index(database.list_threads())))
+	for i in target_threads_subjects:
+		build_thread(i, database.get_thread(i))
+
+		print("Built thread: {}".format(repr(i)))
+
+	if len(target_threads_subjects) != 0 or not check_built_index():
+		build_index(database.list_threads())
+
+		print("Built index")
 
 
 
@@ -455,7 +455,7 @@ def compose(result_file_name, container_file_name, subject, message_file_name, a
 	container = open(container_file_name, "rb").read()
 	message = open(message_file_name, "r", encoding = "UTF-8").read()
 
-	if verify_subject.match(subject) is None:
+	if len(subject) > 128 or "\n" in subject:
 		print("Invalid subject")
 
 		exit(1)
@@ -463,7 +463,7 @@ def compose(result_file_name, container_file_name, subject, message_file_name, a
 	subject = subject.encode()
 	message = message.encode()
 
-	if len(message) >= 0x40000000:
+	if len(message) > 0x40000000:
 		print("Too long message")
 
 		exit(1)
@@ -471,7 +471,7 @@ def compose(result_file_name, container_file_name, subject, message_file_name, a
 	if attachment_file_name is not None:
 		attachment = open(attachment_file_name, "rb").read()
 
-		if len(attachment) >= 0x40000000:
+		if len(attachment) > 0x40000000:
 			print("Too long attachment")
 
 			exit(1)
