@@ -17,25 +17,25 @@ Documentation
 
 ### Refresh
 
-Run `./phemtoboard.py` to search for new posts. It will create thread files in the `threads` directory and the main page `index.htm`. Attachments will be placed into the `attachments` directory.
+Run `./phemtoboard.py` or `phemtoboard.exe` to search for new posts. It will create thread files in the `threads` directory and the main page `index.htm`. Attachments will be placed into the `attachments` directory.
 
 ### Compose
 
-To create a femtocontainer you need a container source (an image in JPEG, PNG or GIF format or a WebM), a post message and an optional attachment. These three files must satisfy the Femtoboard [specification](https://github.com/femtoboard/femtoboard/blob/master/README.md) (note, that `notepad.exe` doesn't use UTF-8 by default, you should choose the encoding in the saving dialog).
+To create a femtocontainer use the Javascript generator included in the index and thread pages.
 
-Run:
+Alternatively, you can call `./phemtoboard.py` or `phemtoboard.exe` with the following console line arguments:
 
 ```
-./phemtoboard.py -r <resulting file> -c <container file> <message file> -a <attachment file>
+-r <resulting file> <container file> <subject string> <message file> -a <attachment file>
 ```
 
-You can omit the first option, and the resulting file will be placed in the `Uploads` directory under a random name.
+You can omit the first option, and the resulting file will be placed in the current directory under a random name.
 
-The script also can choose the container at random from the files in the `Containers` directory if you omit the second option. It will recursively search the directory for files with `jpg`, `jpeg`, `jpe`, `jfif`, `png`, `gif` and `webm` extensions, so be careful if you place there symlinks to directories, because the script can't detect loops.
+Consult the Femtoboard [specification](https://github.com/femtoboard/femtoboard/blob/master/README.md) for information about the input formats.
 
 ### Search a new thread
 
-To add a new thread to the searching list, add the link to the `pages.txt` file. It should work for common imageboards.
+To add a new thread to the searching list, add the link to the `search.txt` file. It should work for common imageboards.
 
 The script downloads and parses the HTML documents, listed in this file, and extracts links, satisfying certain conditions:
 - a link is an `a` tag with a `href` attribute, containing at least 1 `img` element (it can contain other elements, and the `img` elements may be subelements to them);
@@ -54,4 +54,4 @@ The script extracts timestamps from file names, normalizing them to billions of 
 
 Since the script uses partial downloading, the server must support range requests and `Content-Length` header.
 
-It's better to prefer HTTPS links, but Python on Windows can't verify some certificates, like ones issued by [Let's Encrypt](https://letsencrypt.org/), so HTTP links are more portable.
+It's better to use HTTPS links, but Python on Windows can't verify some certificates, like ones issued by [Let's Encrypt](https://letsencrypt.org/), so HTTP links are more portable.

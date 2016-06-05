@@ -31,3 +31,12 @@ video {
 pre {
 	white-space: pre-wrap;
 }
+
+textarea {
+	min-width: 600px;
+	min-height: 400px;
+}
+
+a.save {
+	display: none;
+}

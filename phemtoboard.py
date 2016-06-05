@@ -240,7 +240,7 @@ def parse_page(page):
 from urllib.request import Request
 from hashlib import sha256
 
-split_message = re.compile("\A([a-zA-Z0-9,_-]{,100})\n(.*)\Z", re.M | re.S)
+verify_subject = re.compile("\A[a-zA-Z0-9,_-]{1,100}\Z", re.M)
 
 def extract_post(container):
 	request = Request(container.link)
@@ -260,7 +260,7 @@ def extract_post(container):
 
 		expected_length = int.from_bytes(signature[: 4], "big")
 
-		assert expected_length < 0x80000000
+		assert expected_length < 0x80000062
 	except:
 		return
 
@@ -279,17 +279,16 @@ def extract_post(container):
 	try:
 		assert actual_length == expected_length == len(content)
 
-		parts = content.split(b"\xff", 1)
+		parts = content.split(b"\n", 1)
+		subject = parts[0].decode()
+
+		assert verify_subject.match(subject) is not None
+
+		parts = parts[1].split(b"\xff", 1)
 		message = parts[0].decode()
 
 		assert len(message) < 0x40000000
 
-		message = split_message.match(message)
-
-		assert message is not None
-
-		subject = message.group(1)
-		message = message.group(2)
 		attachment = None
 
 		if len(parts) == 2:
@@ -390,9 +389,9 @@ def build_index(thread_entries):
 database = Database()
 
 def refresh():
-	pages = list(parse_config(open("pages.txt", "r", encoding = "UTF-8").read()))
+	pages = list(parse_config(open("search.txt", "r", encoding = "UTF-8").read()))
 
-	print("Pages in configuration file: {}".format(len(pages)))
+	print("Links in the search list: {}".format(len(pages)))
 
 	containers = {}
 
@@ -452,33 +451,17 @@ from os import walk
 from random import choice
 from sys import exit
 
-def compose(container_file_name, result_file_name, message_file_name, attachment_file_name):
-	if container_file_name is None:
-		possible_containers = []
-
-		for top, directories, files in walk("Containers", followlinks = True):
-			for i in files:
-				if splitext(i)[1] in [".jpg", ".jpeg", ".jpe", ".jfif", ".png", ".gif", ".webm"]:
-					possible_containers.append(join(top, i))
-
-		container_file_name = choice(possible_containers)
-
-		print("Container: {}".format(repr(container_file_name)))
-
+def compose(result_file_name, container_file_name, subject, message_file_name, attachment_file_name):
 	container = open(container_file_name, "rb").read()
 	message = open(message_file_name, "r", encoding = "UTF-8").read()
 
-	if split_message.match(message) is None:
-		print("Invalid message format")
+	if verify_subject.match(subject) is None:
+		print("Invalid subject")
 
 		exit(1)
 
-	try:
-		message = message.encode()
-	except:
-		print("Wrong message encoding")
-
-		exit(1)
+	subject = subject.encode()
+	message = message.encode()
 
 	if len(message) >= 0x40000000:
 		print("Too long message")
@@ -499,19 +482,21 @@ def compose(container_file_name, result_file_name, message_file_name, attachment
 		result_file = NamedTemporaryFile(
 			"wb",
 			suffix = splitext(container_file_name)[1],
-			dir = "Uploads",
+			dir = ".",
 			prefix = "",
 			delete = False
 		)
 
-		print("Result: {}".format(repr(result_file.name)))
+		print("Result: {}".format(repr(split(result_file.name)[1])))
 	else:
 		result_file = open(result_file_name, "wb")
 
 	result_file.write(container)
+	result_file.write(subject)
+	result_file.write(b"\n")
 	result_file.write(message)
 
-	length = len(message)
+	length = len(subject) + 1 + len(message)
 
 	if attachment is not None:
 		result_file.write(b"\xff")
@@ -533,9 +518,16 @@ if len(argv) == 1:
 else:
 	arguments_parser = ArgumentParser()
 	arguments_parser.add_argument("-r", "--result", action = "store")
-	arguments_parser.add_argument("-c", "--container", action = "store")
+	arguments_parser.add_argument("container", action = "store")
+	arguments_parser.add_argument("subject", action = "store")
 	arguments_parser.add_argument("message", action = "store")
 	arguments_parser.add_argument("-a", "--attachment", action = "store")
 	parsed_arguments = arguments_parser.parse_args()
 
-	compose(parsed_arguments.container, parsed_arguments.result, parsed_arguments.message, parsed_arguments.attachment)
+	compose(
+		parsed_arguments.result,
+		parsed_arguments.container,
+		parsed_arguments.subject,
+		parsed_arguments.message,
+		parsed_arguments.attachment
+	)
