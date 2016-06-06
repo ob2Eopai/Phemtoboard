@@ -45,13 +45,14 @@ var insertForm = function (callback, subject) {
 			"container": containerNode.files[0]
 		}).then(function (result) {
 			if (navigator.msSaveBlob !== undefined) {
-				navigator.msSaveBlob(result);
+				navigator.msSaveBlob(result, containerNode.files[0].name);
 			} else {
 				if (saveNode.href !== "") {
 					URL.revokeObjectURL(saveNode.href);
 				}
 
 				saveNode.href = URL.createObjectURL(result);
+				saveNode.download = containerNode.files[0].name;
 				saveNode.click();
 			}
 		}, function (exception) {
