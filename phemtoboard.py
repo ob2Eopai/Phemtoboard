@@ -184,7 +184,7 @@ import os
 import ssl
 from urllib.request import urlopen
 
-if os.name == "posix":
+if os.name != "posix":
 	context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
 else:
 	context = None
