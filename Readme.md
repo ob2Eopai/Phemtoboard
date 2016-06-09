@@ -54,4 +54,4 @@ The script extracts timestamps from file names, normalizing them to billions of 
 
 Since the script uses partial downloading, the server must support range requests and `Content-Length` header.
 
-It's better to use HTTPS links, but Python on Windows can't verify some certificates, like ones issued by [Let's Encrypt](https://letsencrypt.org/), so HTTP links are more portable.
+HTTPS certificate validation is skipped on Windows.

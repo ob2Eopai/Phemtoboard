@@ -180,10 +180,17 @@ def parse_config(config):
 
 # Network
 
+import os
+import ssl
 from urllib.request import urlopen
 
+if os.name == "posix":
+	context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
+else:
+	context = None
+
 def download_page(page):
-	page.content = urlopen(page.link).read()
+	page.content = urlopen(page.link, context = context).read()
 
 import re
 from html.parser import HTMLParser
@@ -245,12 +252,12 @@ def extract_post(container):
 	request.add_header("Range", "bytes=-17")
 
 	try:
-		response = urlopen(request)
+		response = urlopen(request, context = context)
 		signature = response.read()
 
 		assert response.status == 206
 	except:
-		raise Exception("Can't download file: {}:".format(repr(container.link)))
+		raise Exception("Can't download file: {!r}:".format(container.link))
 
 	try:
 		assert len(signature) == 17
@@ -266,13 +273,13 @@ def extract_post(container):
 	request.add_header("Range", "bytes=-{}".format(expected_length + len(signature)))
 
 	try:
-		response = urlopen(request)
+		response = urlopen(request, context = context)
 		actual_length = int(response.headers.get("Content-Length")) - len(signature)
 		content = response.read(actual_length)
 
 		assert response.status == 206
 	except:
-		raise Exception("Can't download file: {}:".format(repr(container.link)))
+		raise Exception("Can't download file: {!r}:".format(container.link))
 
 	try:
 		assert actual_length == expected_length == len(content)
@@ -392,10 +399,10 @@ def refresh():
 			download_page(i)
 			containers.update(parse_page(i))
 		except Exception as exception:
-			print("Can't parse page {}: {}".format(repr(i.link), exception))
+			print("Can't parse page {!r}: {}".format(i.link, exception))
 			continue
 
-		print("Page scanned: {}".format(repr(i.link)))
+		print("Page scanned: {!r}".format(i.link))
 
 	print("Found containers: {}".format(len(containers)))
 
@@ -420,9 +427,9 @@ def refresh():
 		database.add_container(i)
 
 		if i.subject is None:
-			print("Empty container: {}".format(repr(i.link)))
+			print("Empty container: {!r}".format(i.link))
 		else:
-			print("Found a new post in: {}".format(repr(i.link)))
+			print("Found a new post in: {!r}".format(i.link))
 
 			target_threads_subjects.add(i.subject)
 
@@ -435,7 +442,7 @@ def refresh():
 	for i in target_threads_subjects:
 		build_thread(i, database.get_thread(i))
 
-		print("Built thread: {}".format(repr(i)))
+		print("Built thread: {!r}".format(i))
 
 	if len(target_threads_subjects) != 0 or not check_built_index():
 		build_index(database.list_threads())
@@ -487,7 +494,7 @@ def compose(result_file_name, container_file_name, subject, message_file_name, a
 			delete = False
 		)
 
-		print("Result: {}".format(repr(split(result_file.name)[1])))
+		print("Result: {!r}".format(split(result_file.name)[1]))
 	else:
 		result_file = open(result_file_name, "wb")
 
