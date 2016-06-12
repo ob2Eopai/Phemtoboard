@@ -58,13 +58,17 @@ class ThreadEntry():
 		self.posts_count = posts_count
 
 queries = {
-	"initialize": open("resources/initialize.sql", encoding = "UTF-8").read(),
-	"add-container": open("resources/add-container.sql", encoding = "UTF-8").read(),
-	"check-container": open("resources/check-container.sql", encoding = "UTF-8").read(),
-	"get-subjects": open("resources/get-subjects.sql", encoding = "UTF-8").read(),
-	"get-thread": open("resources/get-thread.sql", encoding = "UTF-8").read(),
-	"list-threads": open("resources/list-threads.sql", encoding = "UTF-8").read()
+	"initialize": None,
+	"add-container": None,
+	"check-container": None,
+	"get-subjects": None,
+	"get-thread": None,
+	"list-threads": None
 }
+
+for i in queries:
+	with open(join("resources", i + ".sql"), encoding = "UTF-8") as file:
+		queries[i] = file.read()
 
 class Database():
 	def __init__(self):
@@ -75,7 +79,8 @@ class Database():
 
 	def add_container(self, container):
 		if container.attachment is not None:
-			open(container.attachment_file_name, "wb").write(container.attachment)
+			with open(container.attachment_file_name, "wb") as file:
+				file.write(container.attachment)
 
 		self.connection.execute(queries["add-container"], (
 			container.link,
@@ -321,14 +326,18 @@ from html import escape
 from time import strftime, gmtime
 
 templates = {
-	"thread": Template(open("resources/thread.tpl", encoding = "UTF-8").read()),
-	"post": Template(open("resources/post.tpl", encoding = "UTF-8").read()),
-	"image": Template(open("resources/image.tpl", encoding = "UTF-8").read()),
-	"message": Template(open("resources/message.tpl", encoding = "UTF-8").read()),
-	"attachment": Template(open("resources/attachment.tpl", encoding = "UTF-8").read()),
-	"index": Template(open("resources/index.tpl", encoding = "UTF-8").read()),
-	"thread-entry": Template(open("resources/thread-entry.tpl", encoding = "UTF-8").read())
+	"thread": None,
+	"post": None,
+	"image": None,
+	"message": None,
+	"attachment": None,
+	"index": None,
+	"thread-entry": None
 }
+
+for i in templates:
+	with open(join("resources", i + ".tpl"), encoding = "UTF-8") as file:
+		templates[i] = Template(file.read())
 
 def get_thread_file_name(subject):
 	return join("threads", urlsafe_b64encode(subject.encode()).decode() + ".htm")
@@ -339,47 +348,45 @@ def list_built_threads():
 			yield join("threads", i)
 
 def build_thread(subject, thread):
-	file = open(get_thread_file_name(subject), "w", encoding = "UTF-8")
-
-	file.write(templates["thread"].substitute(
-		subject = escape(subject)
-	))
-
-	for i in thread:
-		content = templates["message"].substitute(message = escape(i.message))
-
-		if i.attachment_ID is not None:
-			attachment_path = join("..", i.attachment_file_name)
-
-			if i.attachment_type in ["image/jpeg", "image/png", "image/gif"]:
-				content = templates["image"].substitute(path = escape(attachment_path)) + content
-			else:
-				content += templates["attachment"].substitute(path = escape(attachment_path))
-
-		file.write(templates["post"].substitute(
-			timestamp = escape(strftime("%Y-%m-%dT%H:%M:%SZ", gmtime(i.timestamp))),
-			readable_timestamp = escape(strftime("%Y-%m-%d, %H:%M:%S", gmtime(i.timestamp))),
-			link = escape(i.link),
-			origin = escape(i.origin),
-			content = content
+	with open(get_thread_file_name(subject), "w", encoding = "UTF-8") as file:
+		file.write(templates["thread"].substitute(
+			subject = escape(subject)
 		))
+
+		for i in thread:
+			content = templates["message"].substitute(message = escape(i.message))
+
+			if i.attachment_ID is not None:
+				attachment_path = join("..", i.attachment_file_name)
+
+				if i.attachment_type in ["image/jpeg", "image/png", "image/gif"]:
+					content = templates["image"].substitute(path = escape(attachment_path)) + content
+				else:
+					content += templates["attachment"].substitute(path = escape(attachment_path))
+
+			file.write(templates["post"].substitute(
+				timestamp = escape(strftime("%Y-%m-%dT%H:%M:%SZ", gmtime(i.timestamp))),
+				readable_timestamp = escape(strftime("%Y-%m-%d, %H:%M:%S", gmtime(i.timestamp))),
+				link = escape(i.link),
+				origin = escape(i.origin),
+				content = content
+			))
 
 def check_built_index():
 	return exists("index.htm")
 
 def build_index(thread_entries):
-	file = open("index.htm", "w", encoding = "UTF-8")
+	with open("index.htm", "w", encoding = "UTF-8") as file:
+		file.write(templates["index"].substitute())
 
-	file.write(templates["index"].substitute())
-
-	for i in thread_entries:
-		file.write(templates["thread-entry"].substitute(
-			link = escape(get_thread_file_name(i.subject)),
-			subject = escape(i.subject),
-			last_timestamp = escape(strftime("%Y-%m-%dT%H:%M:%SZ", gmtime(i.last_timestamp))),
-			readable_last_timestamp = escape(strftime("%Y-%m-%d, %H:%M:%S", gmtime(i.last_timestamp))),
-			posts_count = i.posts_count
-		))
+		for i in thread_entries:
+			file.write(templates["thread-entry"].substitute(
+				link = escape(get_thread_file_name(i.subject)),
+				subject = escape(i.subject),
+				last_timestamp = escape(strftime("%Y-%m-%dT%H:%M:%SZ", gmtime(i.last_timestamp))),
+				readable_last_timestamp = escape(strftime("%Y-%m-%d, %H:%M:%S", gmtime(i.last_timestamp))),
+				posts_count = i.posts_count
+			))
 
 
 
@@ -388,7 +395,8 @@ def build_index(thread_entries):
 database = Database()
 
 def refresh():
-	pages = list(parse_config(open("search.txt", "r", encoding = "UTF-8").read()))
+	with open("search.txt", "r", encoding = "UTF-8") as file:
+		pages = list(parse_config(file.read()))
 
 	print("Links in the search list: {}".format(len(pages)))
 
@@ -459,8 +467,11 @@ from random import choice
 from sys import exit
 
 def compose(result_file_name, container_file_name, subject, message_file_name, attachment_file_name):
-	container = open(container_file_name, "rb").read()
-	message = open(message_file_name, "r", encoding = "UTF-8").read()
+	with open(container_file_name, "rb") as file:
+		container = file.read()
+
+	with open(message_file_name, "r", encoding = "UTF-8") as file:
+		message = file.read()
 
 	if len(subject) > 128 or "\n" in subject:
 		print("Invalid subject")
@@ -476,7 +487,8 @@ def compose(result_file_name, container_file_name, subject, message_file_name, a
 		exit(1)
 
 	if attachment_file_name is not None:
-		attachment = open(attachment_file_name, "rb").read()
+		with open(attachment_file_name, "rb") as file:
+			attachment = file.read()
 
 		if len(attachment) > 0x40000000:
 			print("Too long attachment")
@@ -498,21 +510,22 @@ def compose(result_file_name, container_file_name, subject, message_file_name, a
 	else:
 		result_file = open(result_file_name, "wb")
 
-	result_file.write(container)
-	result_file.write(subject)
-	result_file.write(b"\n")
-	result_file.write(message)
+	with result_file as file:
+		file.write(container)
+		file.write(subject)
+		file.write(b"\n")
+		file.write(message)
 
-	length = len(subject) + 1 + len(message)
+		length = len(subject) + 1 + len(message)
 
-	if attachment is not None:
-		result_file.write(b"\xff")
-		result_file.write(attachment)
+		if attachment is not None:
+			file.write(b"\xff")
+			file.write(attachment)
 
-		length += 1 + len(attachment)
+			length += 1 + len(attachment)
 
-	result_file.write(length.to_bytes(4, "big"))
-	result_file.write(b"FEMTOBOARD-01")
+		file.write(length.to_bytes(4, "big"))
+		file.write(b"FEMTOBOARD-01")
 
 
 
