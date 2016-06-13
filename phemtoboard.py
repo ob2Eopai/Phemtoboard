@@ -136,14 +136,17 @@ class Page():
 
 		self.directories_parts = [urlsplit(i) for i in directories]
 
+class ConfigFormatError(BaseException):
+	pass
+
+JSON_decoder = JSONDecoder()
+
 def split_config_line(string):
 	string = string.lstrip()
 
 	while len(string) != 0:
 		if string.startswith("\""):
 			parts = JSON_decoder.raw_decode(string)
-
-			assert type(parts[0]) is str
 
 			yield parts[0]
 
@@ -158,8 +161,6 @@ def split_config_line(string):
 		string = string.lstrip()
 
 def parse_config(config):
-	JSON_decoder = JSONDecoder()
-
 	arguments_parser = ArgumentParser()
 	arguments_parser.add_argument("-d", "--directory", action = "append")
 	arguments_parser.add_argument("-z", "--timezone", action = "store", type = int, default = 0)
@@ -188,6 +189,10 @@ def parse_config(config):
 import os
 import ssl
 from urllib.request import urlopen
+from urllib.error import URLError
+
+class DownloadingError(BaseException):
+	pass
 
 if os.name != "posix":
 	context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
@@ -195,12 +200,18 @@ else:
 	context = None
 
 def download_page(page):
-	page.content = urlopen(page.link, context = context).read()
+	try:
+		page.content = urlopen(page.link, context = context).read()
+	except URLError as exception:
+		raise DownloadingError(exception.reason)
 
 import re
 from html.parser import HTMLParser
 from urllib.parse import unquote
 from os.path import normpath, commonpath, split, splitext
+
+class PageParsingError(BaseException):
+	pass
 
 cut_timestamp = re.compile("\A(\d*\.?\d*)", re.M)
 
@@ -245,12 +256,21 @@ def parse_page(page):
 	links_parser = HTMLParser()
 	links_parser.handle_starttag = handle_starttag
 	links_parser.handle_endtag = handle_endtag
-	links_parser.feed(page.content.decode())
+
+	try:
+		links_parser.feed(page.content.decode())
+	except UnicodeDecodeError as exception:
+		raise PageParsingError(kxception.reason)
+
+	links_parser.close()
 
 	return result
 
 from urllib.request import Request
 from hashlib import sha256
+
+class ExtractionError(BaseException):
+	pass
 
 def extract_post(container):
 	request = Request(container.link)
@@ -260,18 +280,24 @@ def extract_post(container):
 		response = urlopen(request, context = context)
 		signature = response.read()
 
-		assert response.status == 206
-	except:
+
+		if response.status != 206:
+			raise DownloadingError()
+	except (URLError, DownloadingError):
 		raise Exception("Can't download file: {!r}:".format(container.link))
 
 	try:
-		assert len(signature) == 17
-		assert signature.endswith(b"FEMTOBOARD-01")
+		if len(signature) != 17:
+			raise ExtractionError()
+
+		if not signature.endswith(b"FEMTOBOARD-01"):
+			raise ExtractionError()
 
 		expected_length = int.from_bytes(signature[: 4], "big")
 
-		assert expected_length <= 0x80000082
-	except:
+		if expected_length > 0x80000082:
+			raise ExtractionError()
+	except ExtractionError:
 		return
 
 	request = Request(container.link)
@@ -282,30 +308,35 @@ def extract_post(container):
 		actual_length = int(response.headers.get("Content-Length")) - len(signature)
 		content = response.read(actual_length)
 
-		assert response.status == 206
-	except:
+		if response.status != 206:
+			raise DownloadingError()
+	except (URLError, ValueError, DownloadingError):
 		raise Exception("Can't download file: {!r}:".format(container.link))
 
 	try:
-		assert actual_length == expected_length == len(content)
+		if actual_length != expected_length or actual_length != len(content):
+			raise ExtractionError()
 
 		parts = content.split(b"\n", 1)
 		subject = parts[0].decode()
 
-		assert len(subject) <= 128
+		if len(subject) > 128:
+			raise ExtractionError()
 
 		parts = parts[1].split(b"\xff", 1)
 		message = parts[0].decode()
 
-		assert len(message) <= 0x40000000
+		if len(message) > 0x40000000:
+			raise ExtractionError()
 
 		attachment = None
 
 		if len(parts) == 2:
 			attachment = parts[1]
 
-			assert len(attachment) <= 0x40000000
-	except:
+			if len(attachment) > 0x40000000:
+				raise ExtractionError()
+	except (ExtractionError, UnicodeDecodeError):
 		return
 
 	container.subject = subject
@@ -406,7 +437,7 @@ def refresh():
 		try:
 			download_page(i)
 			containers.update(parse_page(i))
-		except Exception as exception:
+		except (DownloadingError, PageParsingError) as exception:
 			print("Can't parse page {!r}: {}".format(i.link, exception))
 			continue
 
@@ -425,13 +456,7 @@ def refresh():
 	target_threads_subjects = set()
 
 	for i in new_containers:
-		try:
-			extract_post(i)
-		except Exception as exception:
-			print(exception)
-
-			continue
-
+		extract_post(i)
 		database.add_container(i)
 
 		if i.subject is None:
