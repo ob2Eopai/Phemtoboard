@@ -136,7 +136,7 @@ class Page():
 
 		self.directories_parts = [urlsplit(i) for i in directories]
 
-class ConfigFormatError(BaseException):
+class ConfigFormatError(Exception):
 	pass
 
 JSON_decoder = JSONDecoder()
@@ -191,7 +191,7 @@ import ssl
 from urllib.request import urlopen
 from urllib.error import URLError
 
-class DownloadingError(BaseException):
+class DownloadingError(Exception):
 	pass
 
 if os.name != "posix":
@@ -210,10 +210,10 @@ from html.parser import HTMLParser
 from urllib.parse import unquote
 from os.path import normpath, commonpath, split, splitext
 
-class PageParsingError(BaseException):
+class PageParsingError(Exception):
 	pass
 
-cut_timestamp = re.compile("\A(\d*\.?\d*)", re.M)
+cut_timestamp = re.compile("^(\\d*\\.?\\d*)")
 
 def parse_page(page):
 	result = {}
@@ -269,7 +269,7 @@ def parse_page(page):
 from urllib.request import Request
 from hashlib import sha256
 
-class ExtractionError(BaseException):
+class ExtractionError(Exception):
 	pass
 
 def extract_post(container):
