@@ -21,7 +21,7 @@ Run `./phemtoboard.py` or `phemtoboard.exe` to search for new posts. It will cre
 
 ### Compose
 
-To create a femtopost use the Javascript generator included in the index and thread pages.
+To create a femtopost use the embedded generator in the index and thread pages.
 
 Alternatively, you can call `./phemtoboard.py` or `phemtoboard.exe` with the following console line arguments:
 
@@ -31,7 +31,7 @@ Alternatively, you can call `./phemtoboard.py` or `phemtoboard.exe` with the fol
 
 You can omit the first option, and the resulting file will be placed in the current directory under a random name.
 
-Consult with the Femtoboard [specification](https://github.com/femtoboard/femtoboard/blob/master/README.md) for information about the input formats.
+Consult with the Femtoboard specification below for information about the input formats.
 
 ### Search a new thread
 
@@ -44,7 +44,7 @@ The script downloads and parses the HTML documents, listed in this file, and ext
 - the file name extension is one of: `jpg`, `jpeg`, `jpe`, `jfif`, `png`, `gif`, `webm`;
 - only HTTP and HTTPS links allowed.
 
-Some imageboards (like 4chan and 8chan) store user uploaded files on a distinct server. In this case you should add a `-d <allowed directory>` option after a link:
+Some imageboards (like 4chan and 8chan) store user uploaded files on a distinct server. In this case you should add a `-d <allowed directory>` option after the link:
 
 ```
 https://8ch.net/ddt/res/3224.html -d https://media.8ch.net/ddt/src/
@@ -55,3 +55,24 @@ The script extracts timestamps from file names, normalizing them to billions of 
 Since the script uses partial downloading, the server must support range requests and `Content-Length` header.
 
 HTTPS certificate validation is skipped on Windows.
+
+Specification
+=============
+
+Subject is a string of up to 128 characters in UTF-8, not containing new line characters.
+
+Message is a text in UTF-8. The maximum message size is 0x40000000 bytes. It's recommended to use new line character as line separator (not combination of carriage return and new line character) and add it to the end of non-empty messages for consistence, which is important for anonimity.
+
+Attachment is any file of maximum 0x40000000 bytes.
+
+Container is an image or media file in JPEG, PNG, GIF or WebM format.
+
+Femtopost is a sequence of bytes:
+- container;
+- subject;
+- `0x0a`;
+- message;
+- `0xff` byte if an attachment exists;
+- optional attachment;
+- length of the previous 5 items, encoded as 4 big-endian bytes;
+- ASCII representation of the string: `FEMTOBOARD-01`.

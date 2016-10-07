@@ -213,7 +213,7 @@ from os.path import normpath, commonpath, split, splitext
 class PageParsingError(Exception):
 	pass
 
-cut_timestamp = re.compile("^(\\d*\\.?\\d*)")
+cut_timestamp = re.compile("^(\\d*\\.?\\d*)", re.ASCII)
 
 def parse_page(page):
 	result = {}
